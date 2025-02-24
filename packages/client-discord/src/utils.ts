@@ -91,6 +91,7 @@ export async function sendMessageInChunks(
     files: any[]
 ): Promise<DiscordMessage[]> {
     const sentMessages: DiscordMessage[] = [];
+
     const messages = splitMessage(content);
     try {
         for (let i = 0; i < messages.length; i++) {

@@ -170,6 +170,12 @@ export default function Page({ agentId }: { agentId: UUID }) {
 
     const CustomAnimatedDiv = animated.div as React.FC<AnimatedDivProps>;
 
+    const getLocalhostUrl = (url: string) => {
+        return url.startsWith('http')
+            ? url
+            : `http://localhost:3099/media/generated/${url.split('/').pop()}`
+    }
+
     return (
         <div className="flex flex-col w-full h-[calc(100dvh)] p-4">
             <div className="flex-1 overflow-y-auto">
@@ -221,7 +227,7 @@ export default function Page({ agentId }: { agentId: UUID }) {
                                                         >
                                                             <img
                                                                 alt="attachment"
-                                                                src={attachment.url}
+                                                                src={getLocalhostUrl(attachment.url)}
                                                                 width="100%"
                                                                 height="100%"
                                                                 className="w-64 rounded-md"

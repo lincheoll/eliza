@@ -1,5 +1,33 @@
 import { messageCompletionFooter, shouldRespondFooter } from "@elizaos/core";
 
+export const messageCompletionSpecialFooter = `\nResponse format should be formatted in a valid JSON block like this:
+\`\`\`json
+{
+  "user": "{{agentName}}",
+  "text": "<string>",
+  "action": "<string>",
+  "cryptoRequestType": "<string>",
+  "ticker": "<string>"
+}
+The “action” field should be one of the options in [Available Actions] and the "text" field should be the response you want to send.
+#Very important
+If your response is that the image cannot be created, respond with the following JSON format:  
+{"message":"Here is image of what you want", "action":"GENERATE_IMAGE"}  
+Otherwise, proceed with generating the image as requested.
+
+For cryptocurrency related questions:
+- "cryptoRequestType" should be one of: ["MARKET_ANALYSIS", "COIN_ANALYSIS", "NONE"]
+- For "MARKET_ANALYSIS" (e.g., "how is crypto market today?"):
+  * Set "ticker" to ""
+- For "COIN_ANALYSIS" (e.g., "is BTC bullish?", "how is Solana doing?"):
+  * Set "ticker" to the cryptocurrency symbol (e.g., "BTC", "SOL")
+- For non-crypto questions:
+  * Set "cryptoRequestType" to "NONE"
+  * Set "ticker" to ""
+  * I want only the most recent conversation to affect the ticker, cryptoRequestType.
+`;
+
+
 export const discordShouldRespondTemplate =
     `# Task: Decide if {{agentName}} should respond.
 About {{agentName}}:
@@ -120,7 +148,8 @@ Note that {{agentName}} is capable of reading/seeing/hearing various forms of me
 {{recentMessages}}
 
 # Instructions: Write the next message for {{agentName}}. Include an action, if appropriate. {{actionNames}}
-` + messageCompletionFooter;
+` + messageCompletionSpecialFooter;
+
 
 export const discordAutoPostTemplate =
     `# Action Examples
@@ -158,7 +187,17 @@ Examples of {{agentName}}'s dialog and actions:
 - DO NOT REPEAT THE SAME thing that you just said from your recent chat history, start the message different each time, and be organic, non reptitive.
 
 # Instructions: Write the next message for {{agentName}}. Include the "NONE" action only, as the only valid action for auto-posts is "NONE".
+` + messageCompletionSpecialFooter;
+
+
+export const discordAutoPostTemplate2 =
+    `# Action Examples
+# Task: Conduct an analysis of the current cryptocurrency market, focusing on price trends, market capitalization, trading volumes, and key factors influencing the market. Provide insights on which cryptocurrencies are performing well and which are struggling. Identify any notable news or events that could affect market sentiment and future predictions. Additionally, suggest potential investment strategies based on your analysis. as {{agentName}}.
+
+# Instructions: Write the next message for {{agentName}}. Include the "WEB_SEARCH" action only, as the only valid action for auto-posts is "WEB_SEARCH".
 ` + messageCompletionFooter;
+
+
 
 export const discordAnnouncementHypeTemplate =
     `# Action Examples
@@ -193,3 +232,46 @@ Examples of {{agentName}}'s dialog and actions:
 
 # Instructions: Write the next message for {{agentName}}. Include the "NONE" action only, as no other actions are appropriate for announcement hype.
 ` + messageCompletionFooter;
+
+export const cryptoCoinAnalysisTemplate = `
+# Task: Analyze specific cryptocurrency performance and metrics with the latest news and market data.
+
+# Important
+
+# Input Data:  
+coin Data: {{jsonData}}  
+Latest News: {{news}}  
+query message text: {{lastMessageText}}
+recent message text: {{recentMessages}}
+
+# Direction
+- Please write it in the same language as {{lastMessageText}}.
+- Think through and answer all questions
+- If it's a Korean question, you should also consider Kimchi Premium.
+- recent_volume_change is not percentage. it is dollar value.
+- Be community friendly, not too technical. but if the questioner wants, give a thoughtful, in-depth answer (analytics, etc...).
+- Answer questions with data and news bases
+- Be readable, but avoid too many line breaks.
+
+
+` + messageCompletionSpecialFooter;
+
+export const cryptoMarketAnalysisTemplate = `
+# Task: Comprehensive Cryptocurrency Market Analysis  
+
+# Input Data:  
+Market Data: {{jsonData}}  
+Latest News: {{news}}  
+query message text: {{lastMessageText}}
+recent message text: {{recentMessages}}
+
+# Direction
+- Please write it in the same language as {{lastMessageText}}.
+- Think through and answer all questions
+- If it's a Korean question, you should also consider Kimchi Premium.
+- recent_volume_change is not percentage. it is dollar value.
+- Be community friendly, not too technical. but if the questioner wants, give a thoughtful, in-depth answer (analytics, etc...).
+- Answer questions with data and news bases
+- Be readable, but avoid too many line breaks.
+
+` + messageCompletionSpecialFooter;

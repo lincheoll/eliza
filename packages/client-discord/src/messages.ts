@@ -19,7 +19,8 @@ import {
     ChannelType,
     type Client,
     type Message as DiscordMessage,
-    type TextChannel,
+    // type TextChannel,
+    TextChannel
 } from "discord.js";
 import { elizaLogger } from "@elizaos/core";
 import { AttachmentManager } from "./attachments.ts";
@@ -28,7 +29,9 @@ import {
     discordShouldRespondTemplate,
     discordMessageHandlerTemplate,
     discordAutoPostTemplate,
-    discordAnnouncementHypeTemplate
+    discordAnnouncementHypeTemplate,
+    cryptoCoinAnalysisTemplate,
+    cryptoMarketAnalysisTemplate,
 } from "./templates.ts";
 import {
     IGNORE_RESPONSE_WORDS,
@@ -44,6 +47,7 @@ import {
     canSendMessage,
     cosineSimilarity,
 } from "./utils.ts";
+import axios from 'axios';
 
 interface MessageContext {
     content: string;
@@ -52,6 +56,8 @@ interface MessageContext {
 
 interface AutoPostConfig {
     enabled: boolean;
+    intervalAutoPost: boolean,
+    postInterval: number,
     monitorTime: number;
     inactivityThreshold: number; // milliseconds
     mainChannelId: string;
@@ -91,6 +97,8 @@ export class MessageManager {
 
         this.autoPostConfig = {
             enabled: this.runtime.character.clientConfig?.discord?.autoPost?.enabled || false,
+            intervalAutoPost: true,
+            postInterval: 1000 * 60 * 3,
             monitorTime: this.runtime.character.clientConfig?.discord?.autoPost?.monitorTime || 300000,
             inactivityThreshold: this.runtime.character.clientConfig?.discord?.autoPost?.inactivityThreshold || 3600000, // 1 hour default
             mainChannelId: this.runtime.character.clientConfig?.discord?.autoPost?.mainChannelId,
@@ -104,7 +112,6 @@ export class MessageManager {
     }
 
     async handleMessage(message: DiscordMessage) {
-
         if (this.runtime.character.clientConfig?.discord?.allowedChannelIds &&
             !this.runtime.character.clientConfig.discord.allowedChannelIds.includes(message.channelId)) {
             return;
@@ -116,11 +123,11 @@ export class MessageManager {
         if (
             message.interaction ||
             message.author.id ===
-                this.client.user?.id /* || message.author?.bot*/
+            this.client.user?.id /* || message.author?.bot*/
         ) {
             return;
         }
-
+        
         if (
             this.runtime.character.clientConfig?.discord
                 ?.shouldIgnoreBotMessages &&
@@ -128,7 +135,7 @@ export class MessageManager {
         ) {
             return;
         }
-
+        
         // Check for mentions-only mode setting
         if (
             this.runtime.character.clientConfig?.discord
@@ -138,7 +145,7 @@ export class MessageManager {
                 return;
             }
         }
-
+        
         if (
             this.runtime.character.clientConfig?.discord
                 ?.shouldIgnoreDirectMessages &&
@@ -153,7 +160,7 @@ export class MessageManager {
         const channelId = message.channel.id;
         const isDirectlyMentioned = this._isMessageForMe(message);
         const hasInterest = this._checkInterest(message.channelId);
-
+        
         // Team handling
         if (
             this.runtime.character.clientConfig?.discord?.isPartOfTeam &&
@@ -172,7 +179,7 @@ export class MessageManager {
                     messages: [],
                 };
             }
-
+            
             const isTeamRequest = this._isTeamCoordinationRequest(
                 message.content
             );
@@ -245,7 +252,7 @@ export class MessageManager {
                 if (
                     hasInterest ||
                     this.interestChannels[message.channelId]?.currentHandler ===
-                        this.client.user?.id
+                    this.client.user?.id
                 ) {
                     delete this.interestChannels[message.channelId];
 
@@ -320,10 +327,10 @@ export class MessageManager {
                 url: message.url,
                 inReplyTo: message.reference?.messageId
                     ? stringToUuid(
-                          message.reference.messageId +
-                              "-" +
-                              this.runtime.agentId
-                      )
+                        message.reference.messageId +
+                        "-" +
+                        this.runtime.agentId
+                    )
                     : undefined,
             };
 
@@ -565,6 +572,16 @@ export class MessageManager {
     }
 
     private _initializeAutoPost(): void {
+        if (this.autoPostConfig.intervalAutoPost) {
+
+            setInterval(() => {
+                this._doAutoPost();
+            }, this.autoPostConfig.postInterval);
+
+            return;
+        }
+
+
         // Give the client a moment to fully load its cache
         setTimeout(() => {
             // Monitor with random intervals between 2-6 hours
@@ -575,6 +592,77 @@ export class MessageManager {
             // Start monitoring announcement channels
             this._monitorAnnouncementChannels();
         }, 5000); // 5 second delay to ensure everything is loaded
+    }
+
+    private async _doAutoPost(): Promise<void> {
+        if (!this.autoPostConfig.enabled || !this.autoPostConfig.mainChannelId) return;
+
+        const channel = this.client.channels.cache.get(this.autoPostConfig.mainChannelId) as TextChannel;
+        if (!channel) return;
+
+        try {
+            // Check if we should post
+            try {
+                // Create memory and generate response
+                const roomId = stringToUuid(channel.id + "-" + this.runtime.agentId);
+
+                const memory = {
+                    id: stringToUuid(`autopost-${Date.now()}`),
+                    userId: this.runtime.agentId,
+                    agentId: this.runtime.agentId,
+                    roomId,
+                    content: { text: "AUTO_POST_ENGAGEMENT", source: "discord" },
+                    embedding: getEmbeddingZeroVector(),
+                    createdAt: Date.now()
+                };
+
+                let state = await this.runtime.composeState(memory, {
+                    discordClient: this.client,
+                    discordMessage: null,
+                    agentName: this.runtime.character.name || this.client.user?.displayName
+                });
+
+                // Generate response using template
+                const context = composeContext({
+                    state,
+                    template: this.runtime.character.templates?.discordAutoPostTemplate || discordAutoPostTemplate
+                });
+
+                const responseContent = await this._generateResponse(memory, state, context);
+                if (!responseContent?.text) return;
+
+                // Send message and update memory
+                const messages = await sendMessageInChunks(channel, responseContent.text.trim(), null, []);
+
+                // Create and store memories
+                const memories = messages.map(m => ({
+                    id: stringToUuid(m.id + "-" + this.runtime.agentId),
+                    userId: this.runtime.agentId,
+                    agentId: this.runtime.agentId,
+                    content: {
+                        ...responseContent,
+                        url: m.url,
+                    },
+                    roomId,
+                    embedding: getEmbeddingZeroVector(),
+                    createdAt: m.createdTimestamp,
+                }));
+
+                for (const m of memories) {
+                    await this.runtime.messageManager.createMemory(m);
+                }
+
+                // Update state and last post time
+                this.autoPostConfig.lastAutoPost = Date.now();
+                state = await this.runtime.updateRecentMessageState(state);
+                await this.runtime.evaluate(memory, state, true);
+            } catch (error) {
+                elizaLogger.warn("[AutoPost Discord] Error:", error);
+            }
+
+        } catch (error) {
+            elizaLogger.warn("[AutoPost Discord] Error checking last message:", error);
+        }
     }
 
     private async _checkChannelActivity(): Promise<void> {
@@ -1147,8 +1235,8 @@ export class MessageManager {
                 const randomDelay =
                     Math.floor(
                         Math.random() *
-                            (TIMING_CONSTANTS.TEAM_MEMBER_DELAY_MAX -
-                                TIMING_CONSTANTS.TEAM_MEMBER_DELAY_MIN)
+                        (TIMING_CONSTANTS.TEAM_MEMBER_DELAY_MAX -
+                            TIMING_CONSTANTS.TEAM_MEMBER_DELAY_MIN)
                     ) + TIMING_CONSTANTS.TEAM_MEMBER_DELAY_MIN; // 1-3 second random delay
                 await new Promise((resolve) =>
                     setTimeout(resolve, randomDelay)
@@ -1274,7 +1362,7 @@ export class MessageManager {
 
         if (
             message.content.length <
-                MESSAGE_LENGTH_THRESHOLDS.IGNORE_RESPONSE &&
+            MESSAGE_LENGTH_THRESHOLDS.IGNORE_RESPONSE &&
             IGNORE_RESPONSE_WORDS.some((word) =>
                 message.content.toLowerCase().includes(word)
             )
@@ -1342,8 +1430,8 @@ export class MessageManager {
                         const leaderResponded = recentMessages.some(
                             (m) =>
                                 m.userId ===
-                                    this.runtime.character.clientConfig?.discord
-                                        ?.teamLeaderId &&
+                                this.runtime.character.clientConfig?.discord
+                                    ?.teamLeaderId &&
                                 Date.now() - channelState.lastMessageSent < 3000
                         );
 
@@ -1369,8 +1457,8 @@ export class MessageManager {
                     const randomDelay =
                         Math.floor(
                             Math.random() *
-                                (TIMING_CONSTANTS.LEADER_DELAY_MAX -
-                                    TIMING_CONSTANTS.LEADER_DELAY_MIN)
+                            (TIMING_CONSTANTS.LEADER_DELAY_MAX -
+                                TIMING_CONSTANTS.LEADER_DELAY_MIN)
                         ) + TIMING_CONSTANTS.LEADER_DELAY_MIN; // 2-4 second random delay
                     await new Promise((resolve) =>
                         setTimeout(resolve, randomDelay)
@@ -1524,11 +1612,82 @@ export class MessageManager {
     ): Promise<Content> {
         const { userId, roomId } = message;
 
-        const response = await generateMessageResponse({
+        let response = await generateMessageResponse({
             runtime: this.runtime,
             context,
             modelClass: ModelClass.LARGE,
         });
+        console.log(response)
+
+        const getKimchiText = async (data: any) => {
+            if (data.error) {
+                return "cannot check kimchi premium right now";
+            }
+            return data.symbol + " premium: " + data.premium_percentage + "%";
+        }
+
+        if (response.cryptoRequestType) {
+            if (response.cryptoRequestType === "MARKET_ANALYSIS") {
+                const [analysisRes, btcKimchiRes, newsRes] = await Promise.all([
+                    axios.get("http://localhost:8000/market/analysis"),
+                    axios.get("http://localhost:8000/coin/btc/premium"),
+                    axios.get("http://localhost:8000/news/latest")
+                ])
+
+                const analysis = analysisRes.data;
+                const kimchiPremiumText = getKimchiText(btcKimchiRes.data);
+                analysis.btc_kimchi_premium = kimchiPremiumText;
+                const news = newsRes.data;
+
+                const context = composeContext({
+                    state: {
+                        ...state,
+                        news: JSON.stringify(news),
+                        lastMessageText: state.recentMessagesData[state.recentMessagesData.length - 1]?.content?.text,
+                        jsonData: JSON.stringify(analysis)
+                    },
+                    template: cryptoMarketAnalysisTemplate
+                });
+
+                response = await generateMessageResponse({
+                    runtime: this.runtime,
+                    context,
+                    modelClass: ModelClass.LARGE,
+                });
+            }
+
+            if (response.cryptoRequestType === "COIN_ANALYSIS") {
+                const [analysisRes, btcKimchiRes, coinKimchiRes, newsRes] = await Promise.all([
+                    axios.get(`http://localhost:8000/coin/${response.ticker}/analysis`),
+                    axios.get("http://localhost:8000/coin/btc/premium"),
+                    axios.get(`http://localhost:8000/coin/${response.ticker}/premium`),
+                    axios.get(`http://localhost:8000/news/coin/${response.ticker}`)
+                ])
+
+                const analysis = analysisRes.data;
+                const kimchiPremiumData = coinKimchiRes.data.error ? btcKimchiRes.data : coinKimchiRes.data
+                const kimchiPremiumText = getKimchiText(kimchiPremiumData);
+                analysis.kimchi_premium = kimchiPremiumText;
+                const news = newsRes.data;
+
+                const context = composeContext({
+                    state: {
+                        ...state,
+                        news: JSON.stringify(news),
+                        lastMessageText: state.recentMessagesData[state.recentMessagesData.length - 1]?.content?.text,
+                        jsonData: JSON.stringify(analysis)
+                    },
+                    template: cryptoCoinAnalysisTemplate
+                });
+
+                response = await generateMessageResponse({
+                    runtime: this.runtime,
+                    context,
+                    modelClass: ModelClass.LARGE,
+                });
+            }
+
+        }
 
         if (!response) {
             console.error("No response from generateMessageResponse");

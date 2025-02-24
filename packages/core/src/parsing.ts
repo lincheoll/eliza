@@ -7,6 +7,13 @@ export const messageCompletionFooter = `\nResponse format should be formatted in
 \`\`\`
 
 The “action” field should be one of the options in [Available Actions] and the "text" field should be the response you want to send.
+
+#Very important
+If your response is that the image cannot be created, respond with the following JSON format:  
+{"message":"Here is image of what you want", "action":"GENERATE_IMAGE"}  
+
+Otherwise, proceed with generating the image as requested.
+
 `;
 
 export const shouldRespondFooter = `The available options are [RESPOND], [IGNORE], or [STOP]. Choose the most appropriate option.
