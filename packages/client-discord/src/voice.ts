@@ -152,6 +152,7 @@ export class VoiceManager extends EventEmitter {
     > = new Map();
     private activeAudioPlayer: AudioPlayer | null = null;
     private client: Client;
+    private index: number;
     private runtime: IAgentRuntime;
     private streams: Map<string, Readable> = new Map();
     private connections: Map<string, VoiceConnection> = new Map();
@@ -163,6 +164,7 @@ export class VoiceManager extends EventEmitter {
     constructor(client: DiscordClient) {
         super();
         this.client = client.client;
+        this.index = client.index;
         this.runtime = client.runtime;
     }
 
@@ -953,7 +955,7 @@ export class VoiceManager extends EventEmitter {
 
         try {
             const channelId = this.runtime.getSetting(
-                "DISCORD_VOICE_CHANNEL_ID"
+                this.index >= 0 ? `DISCORD_VOICE_CHANNEL_ID_${this.index}` : "DISCORD_VOICE_CHANNEL_ID"
             ) as string;
             if (channelId) {
                 const channel = await guild.channels.fetch(channelId);
@@ -972,7 +974,7 @@ export class VoiceManager extends EventEmitter {
                         voiceChannel.members.size > 0 &&
                         (chosenChannel === null ||
                             voiceChannel.members.size >
-                                chosenChannel.members.size)
+                            chosenChannel.members.size)
                     ) {
                         chosenChannel = voiceChannel;
                     }

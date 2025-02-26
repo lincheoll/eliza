@@ -871,6 +871,25 @@ export type Character = {
                 minTimeBetweenPosts?: number;
             };
         };
+        discords?: {
+            shouldIgnoreBotMessages?: boolean;
+            shouldIgnoreDirectMessages?: boolean;
+            shouldRespondOnlyToMentions?: boolean;
+            messageSimilarityThreshold?: number;
+            isPartOfTeam?: boolean;
+            teamAgentIds?: string[];
+            teamLeaderId?: string;
+            teamMemberInterestKeywords?: string[];
+            allowedChannelIds?: string[];
+            autoPost?: {
+                enabled?: boolean;
+                monitorTime?: number;
+                inactivityThreshold?: number;
+                mainChannelId?: string;
+                announcementChannelIds?: string[];
+                minTimeBetweenPosts?: number;
+            };
+        }[];
         telegram?: {
             shouldIgnoreBotMessages?: boolean;
             shouldIgnoreDirectMessages?: boolean;

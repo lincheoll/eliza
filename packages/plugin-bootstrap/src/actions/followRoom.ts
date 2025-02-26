@@ -55,6 +55,8 @@ export const followRoomAction: Action = {
             roomId,
             runtime.agentId
         );
+
+        console.log(userState)
         return userState !== "FOLLOWED" && userState !== "MUTED";
     },
     handler: async (runtime: IAgentRuntime, message: Memory) => {
@@ -64,11 +66,15 @@ export const followRoomAction: Action = {
                 template: shouldFollowTemplate, // Define this template separately
             });
 
+            console.log(shouldFollowContext)
+
             const response = await generateTrueOrFalse({
                 runtime,
                 context: shouldFollowContext,
                 modelClass: ModelClass.LARGE,
             });
+
+            console.log(response)
 
             return response;
         }

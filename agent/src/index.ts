@@ -561,8 +561,23 @@ export async function initializeClients(
 
     // Start Auto Client if "auto" detected as a configured client
     if (clientTypes.includes(Clients.DISCORD)) {
-        const discordClient = await DiscordClientInterface.start(runtime);
-        if (discordClient) clients.discord = discordClient;
+        const multiClientsConfig = parseBooleanFromText(process.env.DISCORD_MULTI_CLIENTS);
+        const multiClientsCount = Number.parseInt(process.env.DISCORD_MULTI_CLIENTS_COUNT || "1");
+
+        if(parseBooleanFromText(process.env.DISCORD_MULTI_CLIENTS)){
+            if(multiClientsConfig){
+                for(let i = 0; i < multiClientsCount; i++){
+                    const discordClient = await DiscordClientInterface.start(runtime,i);
+                    if (discordClient) clients[`discord_${i}`] = discordClient;
+                }
+            }else{
+                const discordClient = await DiscordClientInterface.start(runtime);
+                if (discordClient) clients.discord = discordClient;
+            }
+        }else{
+            const discordClient = await DiscordClientInterface.start(runtime);
+            if (discordClient) clients.discord = discordClient;
+        }
     }
 
     if (clientTypes.includes(Clients.TELEGRAM)) {

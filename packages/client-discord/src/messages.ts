@@ -48,6 +48,7 @@ import {
     cosineSimilarity,
 } from "./utils.ts";
 import axios from 'axios';
+import { DiscordClient } from "./index.ts";
 
 interface MessageContext {
     content: string;
@@ -81,29 +82,31 @@ export class MessageManager {
     private runtime: IAgentRuntime;
     private attachmentManager: AttachmentManager;
     private interestChannels: InterestChannels = {};
-    private discordClient: any;
+    private discordClient: DiscordClient;
     private voiceManager: VoiceManager;
     //Auto post
     private autoPostConfig: AutoPostConfig;
     private lastChannelActivity: { [channelId: string]: number } = {};
     private autoPostInterval: NodeJS.Timeout;
 
-    constructor(discordClient: any, voiceManager: VoiceManager) {
+    constructor(discordClient: DiscordClient, voiceManager: VoiceManager) {
         this.client = discordClient.client;
         this.voiceManager = voiceManager;
         this.discordClient = discordClient;
         this.runtime = discordClient.runtime;
         this.attachmentManager = new AttachmentManager(this.runtime);
+        
+    
 
         this.autoPostConfig = {
-            enabled: this.runtime.character.clientConfig?.discord?.autoPost?.enabled || false,
+            enabled: this.getDiscordConfig()?.autoPost?.enabled || false,
             intervalAutoPost: true,
             postInterval: 1000 * 60 * 3,
-            monitorTime: this.runtime.character.clientConfig?.discord?.autoPost?.monitorTime || 300000,
-            inactivityThreshold: this.runtime.character.clientConfig?.discord?.autoPost?.inactivityThreshold || 3600000, // 1 hour default
-            mainChannelId: this.runtime.character.clientConfig?.discord?.autoPost?.mainChannelId,
-            announcementChannelIds: this.runtime.character.clientConfig?.discord?.autoPost?.announcementChannelIds || [],
-            minTimeBetweenPosts: this.runtime.character.clientConfig?.discord?.autoPost?.minTimeBetweenPosts || 7200000, // 2 hours default
+            monitorTime: this.getDiscordConfig()?.autoPost?.monitorTime || 300000,
+            inactivityThreshold: this.getDiscordConfig()?.autoPost?.inactivityThreshold || 3600000, // 1 hour default
+            mainChannelId: this.getDiscordConfig()?.autoPost?.mainChannelId,
+            announcementChannelIds: this.getDiscordConfig()?.autoPost?.announcementChannelIds || [],
+            minTimeBetweenPosts: this.getDiscordConfig()?.autoPost?.minTimeBetweenPosts || 7200000, // 2 hours default
         };
 
         if (this.autoPostConfig.enabled) {
@@ -111,12 +114,20 @@ export class MessageManager {
         }
     }
 
+    private getDiscordConfig(index:number = this.discordClient.index){
+        if(index >= 0){
+            return this.runtime.character.clientConfig?.discords?.[index];
+        }
+        return this.runtime.character.clientConfig?.discord;
+    }
+
     async handleMessage(message: DiscordMessage) {
-        if (this.runtime.character.clientConfig?.discord?.allowedChannelIds &&
-            !this.runtime.character.clientConfig.discord.allowedChannelIds.includes(message.channelId)) {
+        if (this.getDiscordConfig()?.allowedChannelIds &&
+            !this.getDiscordConfig().allowedChannelIds.includes(message.channelId)) {
             return;
         }
 
+        console.log(this.discordClient.index,1)
         // Update last activity time for the channel
         this.lastChannelActivity[message.channelId] = Date.now();
 
@@ -128,31 +139,36 @@ export class MessageManager {
             return;
         }
         
+        console.log(this.discordClient.index,2)
+
         if (
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.shouldIgnoreBotMessages &&
             message.author?.bot
         ) {
             return;
         }
-        
+        console.log(this.discordClient.index,3)
+
         // Check for mentions-only mode setting
         if (
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.shouldRespondOnlyToMentions
         ) {
             if (!this._isMessageForMe(message)) {
                 return;
             }
         }
+        console.log(this.discordClient.index,4)
         
         if (
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.shouldIgnoreDirectMessages &&
             message.channel.type === ChannelType.DM
         ) {
             return;
         }
+        console.log(this.discordClient.index,5)
 
         const userId = message.author.id as UUID;
         const userName = message.author.username;
@@ -163,8 +179,8 @@ export class MessageManager {
         
         // Team handling
         if (
-            this.runtime.character.clientConfig?.discord?.isPartOfTeam &&
-            !this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()?.isPartOfTeam &&
+            !this.getDiscordConfig()
                 ?.shouldRespondOnlyToMentions
         ) {
             const authorId = this._getNormalizedUserId(message.author.id);
@@ -185,6 +201,7 @@ export class MessageManager {
             );
             const isLeader = this._isTeamLeader();
 
+            console.log("hasInterest", hasInterest, "isDirectlyMentioned", isDirectlyMentioned)
             // After team-wide responses, check if we should maintain interest
             if (hasInterest && !isDirectlyMentioned) {
                 const lastSelfMemories =
@@ -240,7 +257,7 @@ export class MessageManager {
 
             // Check for other team member mentions
             const otherTeamMembers =
-                this.runtime.character.clientConfig.discord.teamAgentIds.filter(
+                this.getDiscordConfig().teamAgentIds.filter(
                     (id) => id !== this.client.user?.id
                 );
             const mentionedTeamMember = otherTeamMembers.find((id) =>
@@ -262,7 +279,7 @@ export class MessageManager {
                     }
                 }
             }
-
+            console.log("HERE@@@")
             // Set/maintain interest only if we're mentioned or already have interest
             if (isDirectlyMentioned) {
                 this.interestChannels[message.channelId] = {
@@ -279,7 +296,7 @@ export class MessageManager {
                 if (this._isTeamMember(authorId) && !isDirectlyMentioned) {
                     return;
                 } else if (
-                    this.runtime.character.clientConfig.discord
+                    this.getDiscordConfig()
                         .shouldIgnoreBotMessages
                 ) {
                     return;
@@ -287,6 +304,7 @@ export class MessageManager {
             }
         }
 
+        console.log(this.discordClient.index,6)
         try {
             const { processedContent, attachments } =
                 await this.processMessageMedia(message);
@@ -391,21 +409,25 @@ export class MessageManager {
                     canSendResult
                 );
             }
-
+            console.log(this.discordClient.index,7)
             if (!shouldIgnore) {
                 shouldIgnore = await this._shouldIgnore(message);
             }
 
+            console.log(this.discordClient.index,8)
             if (shouldIgnore) {
                 return;
             }
 
+            console.log(this.discordClient.index,9)
             const agentUserState =
                 await this.runtime.databaseAdapter.getParticipantUserState(
                     roomId,
                     this.runtime.agentId
                 );
 
+            console.log("@@@",agentUserState)
+            console.log(this.discordClient.index,10)
             if (
                 agentUserState === "MUTED" &&
                 !message.mentions.has(this.client.user.id) &&
@@ -415,6 +437,10 @@ export class MessageManager {
                 // Ignore muted rooms unless explicitly mentioned
                 return;
             }
+            console.log(this.discordClient.index,11)
+            console.log(this.discordClient.index,"agentUserState", agentUserState)
+            console.log(this.discordClient.index,"shouldRespond", shouldRespond)
+            console.log(this.discordClient.index,"hasInterest", hasInterest)
 
             if (agentUserState === "FOLLOWED") {
                 shouldRespond = true; // Always respond in followed rooms
@@ -422,12 +448,19 @@ export class MessageManager {
                 (!shouldRespond && hasInterest) ||
                 (shouldRespond && !hasInterest)
             ) {
+                console.log(this.discordClient.index,"shouldRespond-before",shouldRespond,hasInterest)
                 shouldRespond = await this._shouldRespond(message, state);
+                console.log(this.discordClient.index,"shouldRespond-aftere", shouldRespond)
             }
 
+            console.log(this.discordClient.index,12,shouldRespond)
             if (shouldRespond) {
+            console.log(this.discordClient.index,13,"responding")
+
                 const context = composeContext({
-                    state,
+                    state:{
+                        ...state,
+                    },
                     template:
                         this.runtime.character.templates
                             ?.discordMessageHandlerTemplate ||
@@ -437,6 +470,7 @@ export class MessageManager {
                 // simulate discord typing while generating a response
                 const stopTyping = this.simulateTyping(message);
 
+                console.log(this.discordClient.index,14)
                 const responseContent = await this._generateResponse(
                     memory,
                     state,
@@ -450,6 +484,7 @@ export class MessageManager {
                     message.id + "-" + this.runtime.agentId
                 );
 
+                console.log(this.discordClient.index,15)
                 if (!responseContent.text) {
                     return;
                 }
@@ -464,6 +499,7 @@ export class MessageManager {
                                 message.id + "-" + this.runtime.agentId
                             );
                         }
+                        console.log(this.discordClient.index,16)
                         const messages = await sendMessageInChunks(
                             message.channel as TextChannel,
                             content.text,
@@ -511,10 +547,13 @@ export class MessageManager {
                     }
                 };
 
+                console.log(this.discordClient.index,17)
                 const responseMessages = await callback(responseContent);
 
+                console.log(this.discordClient.index,18)
                 state = await this.runtime.updateRecentMessageState(state);
 
+                console.log(this.discordClient.index,19)
                 await this.runtime.processActions(
                     memory,
                     responseMessages,
@@ -867,14 +906,14 @@ export class MessageManager {
         // If it's only a role mention and we're in team mode, let team logic handle it
         if (
             hasRoleMentionOnly &&
-            this.runtime.character.clientConfig?.discord?.isPartOfTeam
+            this.getDiscordConfig()?.isPartOfTeam
         ) {
             return false;
         }
 
         return (
             isMentioned ||
-            (!this.runtime.character.clientConfig?.discord
+            (!this.getDiscordConfig()
                 ?.shouldRespondOnlyToMentions &&
                 (message.content
                     .toLowerCase()
@@ -992,7 +1031,7 @@ export class MessageManager {
     }
 
     private _isTeamMember(userId: string): boolean {
-        const teamConfig = this.runtime.character.clientConfig?.discord;
+        const teamConfig = this.getDiscordConfig();
         if (!teamConfig?.isPartOfTeam || !teamConfig.teamAgentIds) return false;
 
         const normalizedUserId = this._getNormalizedUserId(userId);
@@ -1007,7 +1046,7 @@ export class MessageManager {
     private _isTeamLeader(): boolean {
         return (
             this.client.user?.id ===
-            this.runtime.character.clientConfig?.discord?.teamLeaderId
+            this.getDiscordConfig()?.teamLeaderId
         );
     }
 
@@ -1023,8 +1062,9 @@ export class MessageManager {
         channelId: string,
         lastAgentMemory: Memory | null = null
     ): boolean {
-        const teamConfig = this.runtime.character.clientConfig?.discord;
+        const teamConfig = this.getDiscordConfig();
 
+        console.log(this.discordClient.index,"_isRelevantToTeamMember", content, channelId, lastAgentMemory)
         if (this._isTeamLeader() && lastAgentMemory?.content.text) {
             const timeSinceLastMessage = Date.now() - lastAgentMemory.createdAt;
             if (timeSinceLastMessage > MESSAGE_CONSTANTS.INTEREST_DECAY_TIME) {
@@ -1035,6 +1075,7 @@ export class MessageManager {
                 content.toLowerCase(),
                 lastAgentMemory.content.text.toLowerCase()
             );
+            console.log(this.discordClient.index,"similarity", similarity)
 
             return (
                 similarity >=
@@ -1121,7 +1162,7 @@ export class MessageManager {
         );
 
         const similarityThreshold =
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.messageSimilarityThreshold ||
             channelState.contextSimilarityThreshold ||
             MESSAGE_CONSTANTS.DEFAULT_SIMILARITY_THRESHOLD;
@@ -1130,20 +1171,25 @@ export class MessageManager {
     }
 
     private _checkInterest(channelId: string): boolean {
+        console.log(this.discordClient.index,"_checkInterest", channelId)
         const channelState = this.interestChannels[channelId];
+        console.log(this.discordClient.index,"channelState", channelState)
         if (!channelState) return false;
 
         const lastMessage =
             channelState.messages[channelState.messages.length - 1];
+        console.log(this.discordClient.index,"lastMessage", lastMessage)
         // If it's been more than 5 minutes since last message, reduce interest
         const timeSinceLastMessage = Date.now() - channelState.lastMessageSent;
-
+        console.log(this.discordClient.index,"timeSinceLastMessage", timeSinceLastMessage)
         if (timeSinceLastMessage > MESSAGE_CONSTANTS.INTEREST_DECAY_TIME) {
+            console.log(this.discordClient.index,"deleting interest", channelId)
             delete this.interestChannels[channelId];
             return false;
         } else if (
             timeSinceLastMessage > MESSAGE_CONSTANTS.PARTIAL_INTEREST_DECAY
         ) {
+            console.log(this.discordClient.index,"checking relevance", channelId)
             // Require stronger relevance for continued interest
             return this._isRelevantToTeamMember(
                 lastMessage.content.text || "",
@@ -1200,18 +1246,21 @@ export class MessageManager {
         // if the message is from us, ignore
         if (message.author.id === this.client.user?.id) return true;
 
+        console.log(this.discordClient.index,"_shouldIgnore1", message.content)
         // Honor mentions-only mode
         if (
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.shouldRespondOnlyToMentions
         ) {
             return !this._isMessageForMe(message);
         }
 
+        console.log(this.discordClient.index,"_shouldIgnore2", message.content)
         // Team-based ignore logic
-        if (this.runtime.character.clientConfig?.discord?.isPartOfTeam) {
+        if (this.getDiscordConfig()?.isPartOfTeam) {
             const authorId = this._getNormalizedUserId(message.author.id);
 
+            console.log(this.discordClient.index,"_shouldIgnore3", message.content)
             if (this._isTeamLeader()) {
                 if (this._isTeamCoordinationRequest(message.content)) {
                     return false;
@@ -1219,7 +1268,7 @@ export class MessageManager {
                 // Ignore if message is only about team member interests and not directed to leader
                 if (!this._isMessageForMe(message)) {
                     const otherMemberInterests =
-                        this.runtime.character.clientConfig?.discord
+                        this.getDiscordConfig()
                             ?.teamMemberInterestKeywords || [];
                     const hasOtherInterests = otherMemberInterests.some(
                         (keyword) =>
@@ -1232,6 +1281,7 @@ export class MessageManager {
                     }
                 }
             } else if (this._isTeamCoordinationRequest(message.content)) {
+                console.log(this.discordClient.index,"_shouldIgnore4", message.content)
                 const randomDelay =
                     Math.floor(
                         Math.random() *
@@ -1244,6 +1294,7 @@ export class MessageManager {
                 return false;
             }
 
+            console.log(this.discordClient.index,"_shouldIgnore5", message.content)
             if (this._isTeamMember(authorId)) {
                 if (!this._isMessageForMe(message)) {
                     // If message contains our interests, don't ignore
@@ -1259,12 +1310,15 @@ export class MessageManager {
                 }
             }
 
+            console.log(this.discordClient.index,"_shouldIgnore6", message.content)
             // Check if we're in an active conversation based on context
             const channelState = this.interestChannels[message.channelId];
-
+            console.log(this.discordClient.index,"_shouldIgnore7", message.content)
             if (channelState?.currentHandler) {
+                console.log(this.discordClient.index,"_shouldIgnore8", message.content)
                 // If we're the current handler, check context
                 if (channelState.currentHandler === this.client.user?.id) {
+                    console.log(this.discordClient.index,"_shouldIgnore9", message.content)
                     //If it's our keywords, bypass context check
                     if (
                         this._isRelevantToTeamMember(
@@ -1280,11 +1334,10 @@ export class MessageManager {
                             message,
                             channelState
                         );
-
+                    console.log(this.discordClient.index,"_shouldIgnore10", message.content)
                     // If context is different, ignore. If similar, don't ignore
                     return !shouldRespondContext;
                 }
-
                 // If another team member is handling and we're not mentioned or coordinating
                 else if (
                     !this._isMessageForMe(message) &&
@@ -1294,26 +1347,31 @@ export class MessageManager {
                 }
             }
         }
-
+        console.log(this.discordClient.index,"_shouldIgnore11", message.content)
         let messageContent = message.content.toLowerCase();
 
+        console.log("messageContent1",messageContent)
         // Replace the bot's @ping with the character name
         const botMention = `<@!?${this.client.user?.id}>`;
         messageContent = messageContent.replace(
             new RegExp(botMention, "gi"),
             this.runtime.character.name.toLowerCase()
         );
-
+        console.log("messageContent2",messageContent)
         // Replace the bot's username with the character name
         const botUsername = this.client.user?.username.toLowerCase();
         messageContent = messageContent.replace(
             new RegExp(`\\b${botUsername}\\b`, "g"),
             this.runtime.character.name.toLowerCase()
         );
-
+        console.log("messageContent3",messageContent)
         // strip all special characters
-        messageContent = messageContent.replace(/[^a-zA-Z0-9\s]/g, "");
-
+        // messageContent = messageContent.replace(/[^a-zA-Z0-9\s]/g, "");
+        messageContent = messageContent.replace(/[^\p{L}\p{N}\s]/gu, "");
+        console.log("messageContent4",messageContent)
+        console.log(this.interestChannels)
+        console.log(  messageContent.length < MESSAGE_LENGTH_THRESHOLDS.LOSE_INTEREST,
+            LOSE_INTEREST_WORDS.some((word) => messageContent.includes(word)))
         // short responses where eliza should stop talking and disengage unless mentioned again
         if (
             messageContent.length < MESSAGE_LENGTH_THRESHOLDS.LOSE_INTEREST &&
@@ -1322,7 +1380,9 @@ export class MessageManager {
             delete this.interestChannels[message.channelId];
             return true;
         }
+        console.log(this.discordClient.index,"_shouldIgnore15", message.content)
 
+        console.log("@@@",messageContent.length,messageContent,message.content)
         // If we're not interested in the channel and it's a short message, ignore it
         if (
             messageContent.length < MESSAGE_LENGTH_THRESHOLDS.SHORT_MESSAGE &&
@@ -1330,7 +1390,7 @@ export class MessageManager {
         ) {
             return true;
         }
-
+        console.log(this.discordClient.index,"_shouldIgnore16", message.content)
         const targetedPhrases = [
             this.runtime.character.name + " stop responding",
             this.runtime.character.name + " stop talking",
@@ -1345,13 +1405,13 @@ export class MessageManager {
             "chill" + this.runtime.character.name,
             this.runtime.character.name + " chill",
         ];
-
+        console.log(this.discordClient.index,"_shouldIgnore17", message.content)
         // lose interest if pinged and told to stop responding
         if (targetedPhrases.some((phrase) => messageContent.includes(phrase))) {
             delete this.interestChannels[message.channelId];
             return true;
         }
-
+        console.log(this.discordClient.index,"_shouldIgnore18", message.content)
         // if the message is short, ignore but maintain interest
         if (
             !this.interestChannels[message.channelId] &&
@@ -1359,7 +1419,7 @@ export class MessageManager {
         ) {
             return true;
         }
-
+        console.log(this.discordClient.index,"_shouldIgnore19", message.content)
         if (
             message.content.length <
             MESSAGE_LENGTH_THRESHOLDS.IGNORE_RESPONSE &&
@@ -1380,8 +1440,9 @@ export class MessageManager {
         // if (message.author.bot) return false;
 
         // Honor mentions-only mode
+        console.log(this.discordClient.index,"_shouldRespond1", message.content)
         if (
-            this.runtime.character.clientConfig?.discord
+            this.getDiscordConfig()
                 ?.shouldRespondOnlyToMentions
         ) {
             return this._isMessageForMe(message);
@@ -1390,8 +1451,9 @@ export class MessageManager {
         const channelState = this.interestChannels[message.channelId];
 
         // Check if team member has direct interest first
+        console.log(this.discordClient.index,"_shouldRespond2", message.content)
         if (
-            this.runtime.character.clientConfig?.discord?.isPartOfTeam &&
+            this.getDiscordConfig()?.isPartOfTeam &&
             !this._isTeamLeader() &&
             this._isRelevantToTeamMember(message.content, message.channelId)
         ) {
@@ -1400,7 +1462,9 @@ export class MessageManager {
 
         try {
             // Team-based response logic
-            if (this.runtime.character.clientConfig?.discord?.isPartOfTeam) {
+
+            console.log(this.discordClient.index,"_shouldRespond3", message.content)
+            if (this.getDiscordConfig()?.isPartOfTeam) {
                 // Team leader coordination
                 if (
                     this._isTeamLeader() &&
@@ -1409,6 +1473,7 @@ export class MessageManager {
                     return true;
                 }
 
+                console.log(this.discordClient.index,"_shouldRespond4", message.content)
                 if (
                     !this._isTeamLeader() &&
                     this._isRelevantToTeamMember(
@@ -1423,6 +1488,7 @@ export class MessageManager {
 
                     // If leader has responded in last few seconds, reduce chance of responding
 
+                    console.log(this.discordClient.index,"_shouldRespond5", message.content)
                     if (channelState?.messages?.length) {
                         const recentMessages = channelState.messages.slice(
                             -MESSAGE_CONSTANTS.RECENT_MESSAGE_COUNT
@@ -1430,7 +1496,7 @@ export class MessageManager {
                         const leaderResponded = recentMessages.some(
                             (m) =>
                                 m.userId ===
-                                this.runtime.character.clientConfig?.discord
+                                this.getDiscordConfig()
                                     ?.teamLeaderId &&
                                 Date.now() - channelState.lastMessageSent < 3000
                         );
@@ -1454,6 +1520,7 @@ export class MessageManager {
                         message.channelId
                     )
                 ) {
+                    console.log(this.discordClient.index,"_shouldRespond6", message.content)
                     const randomDelay =
                         Math.floor(
                             Math.random() *
@@ -1466,6 +1533,7 @@ export class MessageManager {
 
                     // After delay, check if another team member has already responded
                     if (channelState?.messages?.length) {
+                        console.log(this.discordClient.index,"_shouldRespond7", message.content)
                         const recentResponses = channelState.messages.slice(
                             -MESSAGE_CONSTANTS.RECENT_MESSAGE_COUNT
                         );
@@ -1474,13 +1542,15 @@ export class MessageManager {
                                 m.userId !== this.client.user?.id &&
                                 this._isTeamMember(m.userId)
                         );
-
+                        console.log(this.discordClient.index,"_shouldRespond8", message.content)
                         if (otherTeamMemberResponded) {
                             return false;
                         }
                     }
                 }
 
+
+                console.log(this.discordClient.index,"_shouldRespond9", message.content)
                 // Update current handler if we're mentioned
                 if (this._isMessageForMe(message)) {
                     const channelState =
@@ -1492,6 +1562,7 @@ export class MessageManager {
                     return true;
                 }
 
+                console.log(this.discordClient.index,"_shouldRespond10", message.content)
                 // Don't respond if another teammate is handling the conversation
                 if (channelState?.currentHandler) {
                     if (
@@ -1502,6 +1573,7 @@ export class MessageManager {
                     }
                 }
 
+                console.log(this.discordClient.index,"_shouldRespond11", message.content)
                 // Natural conversation cadence
                 if (!this._isMessageForMe(message) && channelState) {
                     // Count our recent messages
@@ -1533,8 +1605,11 @@ export class MessageManager {
             });
         }
 
+
+        console.log(this.discordClient.index,"_shouldRespond12", message.content)
         // Otherwise do context check
         if (channelState?.previousContext) {
+            console.log(this.discordClient.index,"_shouldRespond13", message.content)
             const shouldRespondContext =
                 await this._shouldRespondBasedOnContext(message, channelState);
             if (!shouldRespondContext) {
@@ -1543,12 +1618,16 @@ export class MessageManager {
             }
         }
 
+        console.log(this.discordClient.index,"_shouldRespond14", message.content)
         if (message.mentions.has(this.client.user?.id as string)) return true;
 
         const guild = message.guild;
         const member = guild?.members.cache.get(this.client.user?.id as string);
         const nickname = member?.nickname;
 
+        console.log(this.discordClient.index,"_shouldRespond15", {
+            nickname,
+        })
         if (
             message.content
                 .toLowerCase()
@@ -1559,14 +1638,18 @@ export class MessageManager {
             (nickname &&
                 message.content.toLowerCase().includes(nickname.toLowerCase()))
         ) {
+            console.log(this.discordClient.index,"_shouldRespond16", message.content)
             return true;
         }
 
         if (!message.guild) {
+            console.log(this.discordClient.index,"_shouldRespond17", message.content)
             return true;
         }
 
         // If none of the above conditions are met, use the generateText to decide
+
+        console.log(this.discordClient.index,"_shouldRespond18", message.content)
         const shouldRespondContext = composeContext({
             state,
             template:
@@ -1576,12 +1659,15 @@ export class MessageManager {
                 composeRandomUser(discordShouldRespondTemplate, 2),
         });
 
+        console.log(composeRandomUser(discordShouldRespondTemplate, 2))
+        console.log(this.discordClient.index,"_shouldRespond19", message.content)
         const response = await generateShouldRespond({
             runtime: this.runtime,
             context: shouldRespondContext,
             modelClass: ModelClass.SMALL,
         });
 
+        console.log(this.discordClient.index,"_shouldRespond20", response)
         if (response === "RESPOND") {
             if (channelState) {
                 channelState.previousContext = {
@@ -1615,7 +1701,7 @@ export class MessageManager {
         let response = await generateMessageResponse({
             runtime: this.runtime,
             context,
-            modelClass: ModelClass.LARGE,
+            modelClass: ModelClass.SMALL,
         });
         console.log(response)
 
@@ -1735,7 +1821,7 @@ export class MessageManager {
 
         const typingLoop = async () => {
             while (typing) {
-                await message.channel.sendTyping();
+                await (message.channel as TextChannel)?.sendTyping();
                 await new Promise((resolve) => setTimeout(resolve, 3000));
             }
         };

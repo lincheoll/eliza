@@ -33,13 +33,14 @@ export class DiscordClient extends EventEmitter {
     client: Client;
     runtime: IAgentRuntime;
     character: Character;
+    index: number;
     private messageManager: MessageManager;
     private voiceManager: VoiceManager;
 
-    constructor(runtime: IAgentRuntime) {
+    constructor(runtime: IAgentRuntime, index?: number) {
         super();
 
-        this.apiToken = runtime.getSetting("DISCORD_API_TOKEN") as string;
+        this.apiToken = index >= 0 ? runtime.getSetting("DISCORD_API_TOKEN_" + index) as string : runtime.getSetting("DISCORD_API_TOKEN") as string;
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
@@ -58,7 +59,7 @@ export class DiscordClient extends EventEmitter {
                 Partials.Reaction,
             ],
         });
-
+        this.index = index;
         this.runtime = runtime;
         this.voiceManager = new VoiceManager(this);
         this.messageManager = new MessageManager(this, this.voiceManager);
@@ -396,17 +397,28 @@ export class DiscordClient extends EventEmitter {
     }
 }
 
-export function startDiscord(runtime: IAgentRuntime) {
-    return new DiscordClient(runtime);
+export function startDiscord(runtime: IAgentRuntime, index?: number) {
+    return new DiscordClient(runtime, index);
 }
 
-export const DiscordClientInterface: ElizaClient = {
-    start: async (runtime: IAgentRuntime) => new DiscordClient(runtime),
-    stop: async (runtime: IAgentRuntime) => {
+
+interface DiscordClientInterface extends ElizaClient {
+    start: (runtime: IAgentRuntime, index?: number) => Promise<DiscordClient>;
+    stop: (runtime: IAgentRuntime, index?: number) => Promise<void>;
+}
+
+export const DiscordClientInterface: DiscordClientInterface = {
+    start: async (runtime: IAgentRuntime, index?: number) => new DiscordClient(runtime, index),
+    stop: async (runtime: IAgentRuntime, index?: number) => {
         try {
             // stop it
-            elizaLogger.log("Stopping discord client", runtime.agentId);
-            await runtime.clients.discord.stop();
+            if (index >= 0) {
+                elizaLogger.log("Stopping discord client ", runtime.agentId, index);
+                await runtime.clients[`discord_${index}`].stop();
+                return;
+            } 
+                elizaLogger.log("Stopping discord client ", runtime.agentId);
+                await runtime.clients.discord.stop();
         } catch (e) {
             elizaLogger.error("client-discord interface stop error", e);
         }

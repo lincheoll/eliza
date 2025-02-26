@@ -1594,6 +1594,7 @@ export async function generateMessageResponse({
         try {
             elizaLogger.log("Generating message response..");
 
+            console.log("@@@@@@@@@@",context.length)
             const response = await generateText({
                 runtime,
                 context,
